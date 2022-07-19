@@ -15,7 +15,7 @@ set.seed(0)
 
 wd.out <- "E:/NON_PROJECT/WORKSHOPS/POWELL/DATA/RESILIENT_NATIVES/"
 
-model.type <- 4
+model.type <- 5
 
 if(model.type==1) {dn <- "normal"; ext <- "/NATIVE_NORMAL"} ## 1 is natives modelled with normal distribution
 if(model.type==2) {dn <- "poisson"; ext <- "/NATIVE_POISSON"} ## 2 is natives modelled with poisson distribution
@@ -28,16 +28,17 @@ if(model.type==6) {dn <- "..."} ## 6 is native presence absence modelled with bi
 nChains = 2
 test.run = F
 if (test.run){
-  #with this option, convergence runs fast but results are not reliable - use if doing a test run
-  thin = 1
-  samples = 3
-  transient = 5
-  verbose = 0
+  ## With this option, convergence runs fast but results are not reliable - use if doing a test run
+  thin <- 1
+  samples <- 3
+  transient <- 5
+  verbose <- 0
 } else {
-  thin = 10
-  samples = 50
-  transient = 5 #*thin
-  verbose = 0
+  ## Options used in Hmsc vignette 1. Lengthy.
+  thin <- 5
+  samples <- 1000
+  transient <- 500*thin
+  verbose <- 500*thin
 }
 
 ##### Load data #####
@@ -56,11 +57,11 @@ out$FocalNative <- splist
 
 ##### Iterate over all species combinations #####
 # sp <- splist[1]
-for(sp in splist[1:3]) {
+for(sp in splist[1:20]) {
   
   d <- read.csv(paste0(wd.out, sp, "_occ.csv")) ## The PctCov_100 column contains 0s, which were calculated by randomly sampling plots without the target native from the same L4 ecoregion as the target native.
   d$RelCov_I[is.na(d$RelCov_I)] <- 0 ## If invader cover is NA, set it to be 0
-  d <- na.omit(d[,c("RelCov_I","PctCov_100", "ar", "hm", "Dataset")]) ## add L4 ecoregion
+  d <- na.omit(d[,c("RelCov_I","PctCov_100", "ar", "hm", "Dataset", "NA_L1NAME")]) 
   colnames(d)[1:2] <- c("invader", "native")
   
   ## If making abundance portion of hurdle model - replace 0s with NA and possibly log-transform
@@ -70,7 +71,6 @@ for(sp in splist[1:3]) {
   }
   
   if(model.type==5) {
-    d$invader <- log(d$invader)
     d$native <- log(d$native)
   }
   
@@ -114,16 +114,16 @@ for(sp in splist[1:3]) {
   XData = data.frame(ar=d$ar,hm=d$hm) ## environmental data
   
   ## Including species-species associations
-  studyDesign <- as.data.frame(matrix(NA,nrow(d),2))
+  studyDesign <- as.data.frame(matrix(NA,nrow(d),3))
   studyDesign[,1] <- as.factor(d$Dataset)
   studyDesign[,2] <- as.factor(1:nrow(d))
-  # studyDesign[,3] <- as.factor(d$...)
+  studyDesign[,3] <- as.factor(d$NA_L1NAME)
   
-  colnames(studyDesign) <- c("dataset", "species")
+  colnames(studyDesign) <- c("dataset", "species", "l1_ecoregion")
   
   rL.dataset <- HmscRandomLevel(units = studyDesign$dataset)
   rL.species <- HmscRandomLevel(units = studyDesign$species)
-  # rL.ecoL4 <- HmscRandomLevel(units = studyDesign$...)
+  rL.l1eco <- HmscRandomLevel(units = studyDesign$l1_ecoregion)
   
   ## Set the model formula
   # XFormula <- ~x1+x2 ## Simplest - additive effect
@@ -131,7 +131,7 @@ for(sp in splist[1:3]) {
   
   m <- Hmsc(Y = Y, XData = XData, XFormula = XFormula, 
             distr=c("normal", dn), ## Can have different observation models for the different 'species', i.e. binomial for native occurrence and normal for invader cover
-            studyDesign = studyDesign, ranLevels = list("species"=rL.species, "dataset"=rL.dataset), YScale=T) ## the order of the random levels changes the order of the output of the computeAssociations and gelmanDiag functions (and others)
+            studyDesign = studyDesign, ranLevels = list("species"=rL.species, "dataset"=rL.dataset, "l1_ecoregion"=rL.l1eco), YScale=T) ## the order of the random levels changes the order of the output of the computeAssociations and gelmanDiag functions (and others)
   
   m <- sampleMcmc(m, thin = thin, samples = samples, transient = transient,
                   nChains = nChains, verbose = verbose, alignPost=FALSE) ## In order to implement covariate-dependent species associations alignPost=FALSE must be set. See https://github.com/hmsc-r/HMSC/issues/31. 

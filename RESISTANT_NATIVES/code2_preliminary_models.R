@@ -46,12 +46,14 @@ dat.cmn <- read.csv(paste0(wd.out, "FULLDatabase_05272022_commonCov_env_IAS.csv"
 splist <- unique(dat.cmn$SpCode)
 
 ##### Create output file
-out <- as.data.frame(matrix(data=NA, nrow=length(splist), ncol=39))
+out <- as.data.frame(matrix(data=NA, nrow=length(splist), ncol=41))
 colnames(out) <- c("FocalNative", "nplots", "exceed80pc", "expR2_I", "expR2_N", "predR2_I", "predR2_N",
                    "int_I", "ar_I", "ar2_I", "hm_I", "hm2_I", "int_N", "ar_N", "ar2_N", "hm_N", "hm2_N",
                    "assoc", "supp",
                    "psrf_int_I", "psrf_ar_I", "psrf_ar2_I", "psrf_hm_I", "psrf_hm2_I", "psrf_int_N", "psrf_ar_N", "psrf_ar2_N", "psrf_hm_N", "psrf_hm2_N", ## Potential scale reduction factors (PSRF) of the environmental effects
-                   "diff_int_I", "diff_ar_I", "diff_ar2_I", "diff_hm_I", "diff_hm2_I", "diff_int_N", "diff_ar_N", "diff_ar2_N", "diff_hm_N", "diff_hm2_N") ## difference between effective sample size and theoretical value of the actual number of samples
+                   "diff_int_I", "diff_ar_I", "diff_ar2_I", "diff_hm_I", "diff_hm2_I", "diff_int_N", "diff_ar_N", "diff_ar2_N", "diff_hm_N", "diff_hm2_N", ## difference between effective sample size and theoretical value of the actual number of samples
+                   "cor_r", "cor_p" ## spearman correlations of native and invader cover
+)
 
 out$FocalNative <- splist
 
@@ -225,7 +227,8 @@ for(sp in splist[1:20]) {
                                   as.data.frame(summary(mpost$Beta)$statistics)$Mean, ## environmental parameter estimates
                                   assoc, supp, ## species associations
                                   as.data.frame(gelman.diag(mpost$Beta, multivariate=FALSE)$psrf)[,1], ## psrf, 
-                                  (nChains*samples) - effectiveSize(mpost$Beta) ## difference between effective sample size and theoretical value of the actual number of samples
+                                  (nChains*samples) - effectiveSize(mpost$Beta), ## difference between effective sample size and theoretical value of the actual number of samples
+                                  cor$estimate, cor$p.value
   )
   
 }

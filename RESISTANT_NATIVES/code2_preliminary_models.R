@@ -15,18 +15,18 @@ set.seed(0)
 
 wd.out <- "E:/NON_PROJECT/WORKSHOPS/POWELL/DATA/RESILIENT_NATIVES/"
 
-model.type <- 5
+model.type <- 6
 
-if(model.type==1) {dn <- "normal"; ext <- "/NATIVE_NORMAL"} ## 1 is natives modelled with normal distribution
-if(model.type==2) {dn <- "poisson"; ext <- "/NATIVE_POISSON"} ## 2 is natives modelled with poisson distribution
-if(model.type==3) {dn <- "lognormal poisson"; ext <- "/NATIVE_LOGNORMAL_POISSON"} ## 3 is natives modelled with lognormal poisson distribution
-if(model.type==4) {dn <- "normal"; ext <- "/NATIVE_INVADER_ABUNDANCE_ONLY_NORMAL"} ## 4 is native abundance modelled with normal distribution
-if(model.type==5) {dn <- "normal"; ext <- "/NATIVE_INVADER_ABUNDANCE_ONLY_LOGTRANSFORM_NORMAL"} ## 5 is native abundance log-transformed and modelled with normal distribution
-if(model.type==6) {dn <- "..."} ## 6 is native presence absence modelled with binomial distribution
+if(model.type==1) {dn <- "normal"; ext <- "/NATIVE_NORMAL"; dn.i <- "normal"} ## 1 is natives modelled with normal distribution
+if(model.type==2) {dn <- "poisson"; ext <- "/NATIVE_POISSON"; dn.i <- "normal"} ## 2 is natives modelled with poisson distribution
+if(model.type==3) {dn <- "lognormal poisson"; ext <- "/NATIVE_LOGNORMAL_POISSON"; dn.i <- "normal"} ## 3 is natives modelled with lognormal poisson distribution
+if(model.type==4) {dn <- "normal"; ext <- "/NATIVE_INVADER_ABUNDANCE_ONLY_NORMAL"; dn.i <- "normal"} ## 4 is native abundance modelled with normal distribution
+if(model.type==5) {dn <- "normal"; ext <- "/NATIVE_INVADER_ABUNDANCE_ONLY_LOGTRANSFORM_NORMAL"; dn.i <- "normal"} ## 5 is native abundance log-transformed and modelled with normal distribution
+if(model.type==6) {dn <- "probit"; ext <- "/NATIVE_INVADER_PRES_ABS_PROBIT"; dn.i <- "probit"} ## 6 is native presence absence modelled with probit distribution
 
 ### Convergence rules
 nChains = 2
-test.run = F
+test.run = T
 if (test.run){
   ## With this option, convergence runs fast but results are not reliable - use if doing a test run
   thin <- 1
@@ -74,6 +74,12 @@ for(sp in splist[1:20]) {
   
   if(model.type==5) {
     d$native <- log(d$native)
+  }
+  
+  ## If making presence-absence portion of hurdle model - replace abundances with 1s
+  if(model.type==6) {
+    d$invader[d$invader>0] <- 1
+    d$native[d$native>0] <- 1
   }
   
   ##### Visualise data #####
@@ -132,7 +138,7 @@ for(sp in splist[1:20]) {
   XFormula <- ~ poly(ar, degree = 2, raw = TRUE) + poly(hm, degree = 2, raw = TRUE) ## implement polynomial effects
   
   m <- Hmsc(Y = Y, XData = XData, XFormula = XFormula, 
-            distr=c("normal", dn), ## Can have different observation models for the different 'species', i.e. binomial for native occurrence and normal for invader cover
+            distr=c(dn.i, dn), ## Can have different observation models for the different 'species', i.e. binomial for native occurrence and normal for invader cover
             studyDesign = studyDesign, ranLevels = list("species"=rL.species, "dataset"=rL.dataset, "l1_ecoregion"=rL.l1eco), YScale=T) ## the order of the random levels changes the order of the output of the computeAssociations and gelmanDiag functions (and others)
   
   m <- sampleMcmc(m, thin = thin, samples = samples, transient = transient,
@@ -222,14 +228,15 @@ for(sp in splist[1:20]) {
   plot(d$invader, d$native, main=sp)
   dev.off()
   
+  cor <- cor.test(d$native, d$invader, method="spearman")
+  
   ##### Write results to a data frame #####
   out[out$FocalNative==sp, ] <- c(sp, nrow(d), table((d$native + d$invader)>80)[2], expR2, predR2, ## How often summed cover is > 80% and the R2 values
                                   as.data.frame(summary(mpost$Beta)$statistics)$Mean, ## environmental parameter estimates
                                   assoc, supp, ## species associations
                                   as.data.frame(gelman.diag(mpost$Beta, multivariate=FALSE)$psrf)[,1], ## psrf, 
                                   (nChains*samples) - effectiveSize(mpost$Beta), ## difference between effective sample size and theoretical value of the actual number of samples
-                                  cor$estimate, cor$p.value
-  )
+                                  cor$estimate, cor$p.value)
   
 }
 

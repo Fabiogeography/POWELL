@@ -11,13 +11,13 @@
 # library(spatstat) ## nndist
 library(nabor) # knn
 library(magrittr)
-# library(SpatialEpi)
 library(rlang)
 library(dplyr)
-# library(RANN)
 library(raster) ## buffer
 library(rgdal)
 library(spatialEco) ## point.in.poly
+library(ncf) ## correlog
+library(gstat) ## variogram
 
 wd.dat <- "E:/NON_PROJECT/WORKSHOPS/POWELL/DATA/SPCIS/"
 wd.out <- "E:/NON_PROJECT/WORKSHOPS/POWELL/DATA/RESISTANT_PLOTS/"
@@ -43,6 +43,7 @@ table(plots$Plot %in% dat.I$Plot) ## Checking that all the plots are in the inva
 dat <- left_join(plots, dat.I, by = c("Plot", "Year")) 
 
 ### Reduce table so each plot only represented once
+## Therefore, When summarising invasion in the surrounding landscape, if a plot was sampled in multiple years, I used the mean values across all sample years.
 dat <- dat %>% group_by(Plot) %>%
   summarise(
     dataset = first(Dataset),
@@ -56,33 +57,52 @@ dat <- dat %>% group_by(Plot) %>%
     DiversityInvSimpson_I = mean(DiversityInvSimpson_I),
     EvennessEvar_I = mean(EvennessEvar_I),
     EvennessPielou_I = mean(EvennessPielou_I),
-    Long = first(Long),
-    Lat = first(Lat)
+    Original.Long = first(Original.Long),
+    Original.Lat = first(Original.Lat)
   )
 
-## Using this code within summarise confirms that there is only 1 long and lat per plot. 
+## Using this code within summarise confirms that each plot has a uniquw long and lat, so using 'first' is ok.
 # num_x = n_distinct(x),
 # num_y = n_distinct(y)
 ## Comparing summary of orignal and modified dat confirms teh long and lat are maintained correctly by first()
 
 ### Make df spatial + project to equal area projection
-coordinates(dat) <- ~ Long + Lat
+coordinates(dat) <- ~ Original.Long + Original.Lat
 proj4string(dat) <- proj.wgs
 # plot(dat)
 dat <- spTransform(dat, CRS = proj.albers) ## Spatial units are now in metres
 # plot(dat)
 
 ### Ensure coordinates are in data as well, which can be helpful
-dat$x <- coordinates(dat)[,"Long"]
-dat$y <- coordinates(dat)[,"Lat"] 
+dat$x <- coordinates(dat)[,"Original.Long"]
+dat$y <- coordinates(dat)[,"Original.Lat"] 
 
 ##### Testing whether each plot has distinct coordinates#####
-test <- knn(data=as.matrix(coordinates(dat)), k=2) 
-table(test$nn.dists[,2]==0) ## 23120 (of 80775) plots are in the exact same location as another plot with a different ID
-test2 <- dat[test$nn.dists[,2]==0,]
-table(test2$dataset)
-test3 <- test2[test2$dataset=="NWCA",]
-### See email to Lais and Dan B 26th July 2022. Going to continue with existinc data for now.
+### Email with Lais and Dan B 26th July 2022. 
+##  NPS contains different plots but with a single set of coordinates for them all.
+## I also know similar situation happens for some plots of VNHP and WVNHP.
+## The coordinates are assigned at the Site level
+test <- nabor::knn(data=as.matrix(coordinates(dat)), k=2) 
+table(test$nn.dists[,2]==0) ## 14361 (of 80782) plots are in the exact same location as another plot with a different ID (less than when Long and Lat were used - was 23120)
+test2 <- dat[test$nn.dists[,2]==0,] ## which plots have duplicated coordinates?
+table(test2$dataset) ## Shows which datasets contain plots with the same coordinates. Doesn't include FIA plots now
+
+# CVS IL_CTAP     NPS    NWCA    VNHP   WVNHP 
+# 696     572    2000   10893     155      45 
+
+## All of the plots in NWCA have non-unique coordinates. Are they locationally important?
+plot(test2$x[test2$dataset=="NWCA"], test2$y[test2$dataset=="NWCA"], pch=16, cex=0.5, col="red")
+points(test2$x[test2$dataset=="NPS"], test2$y[test2$dataset=="NPS"], pch=16, cex=0.5, col="green")
+points(test2$x[test2$dataset=="CVS"], test2$y[test2$dataset=="CVS"], pch=16, cex=0.5, col="blue")
+points(test2$x[test2$dataset=="IL_CTAP"], test2$y[test2$dataset=="IL_CTAP"], pch=16, cex=0.5, col="pink")
+points(test2$x[test2$dataset=="VNHP"], test2$y[test2$dataset=="VNHP"], pch=16, cex=0.5, col="purple")
+points(test2$x[test2$dataset=="WVNHP"], test2$y[test2$dataset=="WVNHP"], pch=16, cex=0.5, col="orange")
+points(dat$Original.Long[!(dat$Plot %in% test2$Plot)], dat$Original.Lat[!(dat$Plot %in% test2$Plot)], pch=16, cex=0.5)
+## Yes, NWCA points occur in locations that other datasets don't cover. No other dataset is important. 
+## Emailed Lais and Dan to see if could resolve
+
+### For the time being, remove all plots with non-unique coordinates.
+dat <- dat[!(dat$Plot %in% test2$Plot),]
 
 ##### Nearest neighbour calculations (m) #####
 ## Separate the invaded and uninvaded plots
@@ -96,14 +116,18 @@ writeOGR(plots.U, dsn="E:/NON_PROJECT/WORKSHOPS/POWELL/DATA/RESISTANT_PLOTS", la
 ## Distance from each invaded plots to nearest invaded plot
 I <- as.matrix(coordinates(plots.I))
 rownames(I) <- plots.I$Plot
-dist.I <- knn(data=I, k=2)
-# dist.I <- dist.I2nn.dists[,2]
+dist.I <- nabor::knn(data=I, k=2) ## Doesn't contain any 0 distances
+in500m <- dist.I$nn.dists[,2]
+length(in500m <- in500m[in500m<=5000]) ## 15739 invaded plots have an invaded neighbour within 500m, 21689 within 2km, 31180 within 5km
+length(dist.I$nn.dists[,2]) ## 35898 invaded plots
+
 
 ## Distance from each UNinvaded plots to nearest invaded plot
 U <- as.matrix(coordinates(plots.U))
 rownames(U) <- plots.U$Plot
-dist.U <- knn(data=I, query=U, k=1) ## this way round finds the distance FROM each uninvaded plot
-# dist.U <- dist.U$nn.dists
+dist.U <- nabor::knn(data=I, query=U, k=1) ## this way round finds the distance FROM each uninvaded plot. Doesn't contain any 0 distances
+length(in500m <- dist.U$nn.dists[dist.U$nn.dists<=5000]) ## 7391 uninvaded plots have an invaded neighbour within 500m, 16286 within 2km, 23293 within 5km
+length(dist.U$nn.dists) ## 30523 uninvaded plots
 
 ## Plot distance to nearest invader.
 par(mfrow=c(1,2))
@@ -149,20 +173,80 @@ hist(plots.U.nn$Richness_I, xlim=c(0,50),
      breaks=seq(0, 50, 5), 
      main="Uninvaded plots", xlab="Number of invaders in nearest\ninvaded neighbour")
 
+### Repeat spline correlograms from code2 and 2b now that plots with duplicate coordinates are removed
+# If observations are univariate the spline (cross-)correlogram represents the generalization of the spatial (cross-)correlogram.
+# If observations are multivariate the spline (cross-)correlogram represents the generalization of the Mantel (cross-)correlogram.
+
+set.seed(0)
+dat.trim <- dat[sample(nrow(dat), 10000),] ## Otherwise very lengthy and uses up too much memory to run
+
+### Across all points
+## RelCov_I
+cgm.sp <- spline.correlog(dat.trim$Original.Long, dat.trim$Original.Lat,  dat.trim$RelCov_I, resamp=25, quiet=FALSE, latlon=F)
+plot(cgm.sp, xlab="Distance (m)", ylab="Moran's I", main="RelCov_I") 
+
+## TotalPctCover_I
+cgm.sp <- spline.correlog(dat.trim$Original.Long, dat.trim$Original.Lat,  dat.trim$TotalPctCover_I, resamp=5, quiet=FALSE, latlon=F)
+plot(cgm.sp, xlab="Distance (m)", ylab="Moran's I", main="TotalPctCover_I") 
+
+## Richness_I
+cgm.sp <- spline.correlog(dat.trim$Original.Long, dat.trim$Original.Lat,  dat.trim$Richness_I, resamp=5, quiet=FALSE, latlon=F)
+plot(cgm.sp, xlab="Distance (m)", ylab="Moran's I", main="Richness_I") 
+
+## DiversityShannon_I
+cgm.sp <- spline.correlog(dat.trim$Original.Long, dat.trim$Original.Lat,  dat.trim$DiversityShannon_I, resamp=5, quiet=FALSE, latlon=F)
+plot(cgm.sp, xlab="Distance (m)", ylab="Moran's I", main="DiversityShannon_I") 
+
+### Across points within 10k radius of each other
+## RelCov_I
+cgm.sp <- spline.correlog(dat.trim$Original.Long, dat.trim$Original.Lat,  dat.trim$RelCov_I, resamp=25, quiet=FALSE, latlon=F, xmax=1000)
+plot(cgm.sp, xlab="Distance (m)", ylab="Moran's I", main="RelCov_I") 
+
+## TotalPctCover_I
+cgm.sp <- spline.correlog(dat.trim$Original.Long, dat.trim$Original.Lat,  dat.trim$TotalPctCover_I, resamp=5, quiet=FALSE, latlon=F, xmax=1000)
+plot(cgm.sp, xlab="Distance (m)", ylab="Moran's I", main="TotalPctCover_I") 
+
+## Richness_I
+cgm.sp <- spline.correlog(dat.trim$Original.Long, dat.trim$Original.Lat,  dat.trim$Richness_I, resamp=5, quiet=FALSE, latlon=F, xmax=1000)
+plot(cgm.sp, xlab="Distance (m)", ylab="Moran's I", main="Richness_I") 
+
+## DiversityShannon_I
+cgm.sp <- spline.correlog(dat.trim$Original.Long, dat.trim$Original.Lat,  dat.trim$DiversityShannon_I, resamp=5, quiet=FALSE, latlon=F, xmax=1000)
+plot(cgm.sp, xlab="Distance (m)", ylab="Moran's I", main="DiversityShannon_I") 
+
+##### Sample (empircal) variograms #####
+## gamma is half the average squared distance between plots within a given distance bin
+## If have outliers use robust estimator is designed to downweight observations that are unusually large or small compared to neighboring observations.
+## Divides data up into 15 distance bins (default?) and calculates the variogram value gamma for the pairs of plots within each distance bin
+par(mfrow=c(2,2))
+
+vario1 <- variogram(RelCov_I ~ 1, data = dat, cutoff=2000) ## Lengthy unless data restricted or cutoff is implemented. For quicker calculations use dat[1:1000,]
+plot(vario1$dist, vario1$gamma, xlab="Distance, m", ylab="gamma", main="RelCov_I") ## gamma (i.e. difference in RelCov_I between plots) peaks at 400m then drops. 
+
+vario2 <- variogram(TotalPctCover_I ~ 1, data = dat, cutoff=2000) 
+plot(vario2$dist, vario2$gamma, xlab="Distance, m", ylab="gamma", main="TotalPctCover_I") 
+
+vario3 <- variogram(Richness_I ~ 1, data = dat, cutoff=2000) 
+plot(vario3$dist, vario3$gamma, xlab="Distance, m", ylab="gamma", main="Richness_I") 
+
+vario4 <- variogram(DiversityShannon_I ~ 1, data = dat[!is.na(dat$DiversityShannon_I),], cutoff=2000) ## Continues to increase with distance
+plot(vario4$dist, vario4$gamma, xlab="Distance, m", ylab="gamma", main="DiversityShannon_I") 
+
 ##### Calculate metrics within 500m radius of focal plot #####
 
 ## Make a shapefile containing a buffer for each focal plot
-d.buf <- buffer(dat, width = 500, dissolve = F)
+radius <- 500
+d.buf <- buffer(dat, width = radius, dissolve = F)
 d.buf@data <- d.buf@data[,"Plot"] ## Just retain the plot id
 colnames(d.buf@data) <- "plot.focal"
 
 ## Join the points that are found within the radius to the focal plot. 
 pp <- point.in.poly(dat, d.buf)@data ## Just the data frame, not spatial data
-## 588099 rows so on average 7.2 plots inside every buffer (one of which is the focal plot)
+## 199767 (was 588099 before dups removed) rows so on average 3 plots inside every buffer (one of which is the focal plot)
 
 # for(i in 1:5) { ## 1:nrow(dat)
 inv.metric.fn <- function(i) {
-  plt <- as.character(dat@data[i,"Plot"])
+  plt <- as.character(dat@data[i,"Plot"]) ## focal plot
   
   ## Summarise some data for plots within 500m of the focal plots where invaders are present
   inv.dat <- pp[pp$plot.focal==plt & !is.na(pp$plot.focal) & pp$RelCov_I>0,] %>% 
@@ -187,4 +271,5 @@ inv.metric.fn <- function(i) {
 inv.summary <- lapply(c(1:nrow(dat)), inv.metric.fn)
 inv.summary <- as.data.frame(do.call(rbind, inv.summary))
 
-write.csv(inv.summary, file=paste0(wd.out, "FULLDatabase_invasion_summary_500.csv"))
+write.csv(inv.summary, file=paste0(wd.out, "FULLDatabase_invasion_summary_,"radius,".csv"), row.names=F)
+

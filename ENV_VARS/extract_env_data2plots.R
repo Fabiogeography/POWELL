@@ -2,7 +2,7 @@
 ##### Extract environmental data at plot locations #####
 ##### Written by Regan Early
 ##### Written on 20th May 2020
-##### Modified on 17th June 2022
+##### Modified on 4th July 2022
 #################################################################################
 
 library(sp)
@@ -11,9 +11,10 @@ library(raster)
 library(maptools)
 library(rgeos)
 library(maps)
+library(dplyr)
 
 wd.env <- "E:/NON_PROJECT/NCEAS2/ENV_DATA/ENV_LAYERS"
-wd.dat <- "D:/NON_PROJECT/WORKSHOPS/POWELL/DATA/"
+wd.dat <- "E:/NON_PROJECT/WORKSHOPS/POWELL/DATA/SPCIS/"
 
 proj.wgs <-
   "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
@@ -21,8 +22,12 @@ proj.wgs <-
 crs.merc <- CRS("+init=epsg:3857") ## Mercator projection string that gives planar coordinates. https://epsg.io/3857
 
 ##### Geographic plot locations #####
-dat <- read.csv(paste0(wd.dat, "SPCIS_plots.csv")) ## from Eve, uploaded to Drive 17th June 2022
-dat <- dat[!is.na(dat$Long), ] ##  remove plots with no coordinates
+dat <- read.csv(paste0(wd.dat, "FULLDatabase_05272022.csv"))
+dat <- dat[,c("Dataset","Plot","Year","Original.Plot","Site","Original.Site", "Long","Lat","FuzzedCoord","Zone","PlotArea.m2","SamplingMethod","Resampled")] ## The field names from Lais' original plots file
+dat <- unique(dat) ## 87810 unique plots (87808 in the SPCIS file for publication)
+
+# datx <- read.csv(paste0(wd.dat, "SPCIS_plots_env_17thJune2022.CSV")) ## from Eve, uploaded to Drive 17th June 2022
+dat <- dat[!is.na(dat$Long), ] ##  remove plots with no coordinates. 84308 remaining.
 coordinates(dat) <- ~ Long + Lat ## convert to shapefile
 proj4string(dat) <- proj.wgs ## project
 
@@ -221,15 +226,15 @@ dom <- read.csv("E:/NON_PROJECT/NCEAS2/LOCATION_DATA/NEON_Field_Site_Metadata_20
 dat$field_site_id <- substr(dat$Plot, 1, 4)
 
 dat <- merge(dat, dom[,c("field_site_id", "field_domain_id")],
-              by.x="field_site_id", by.y="field_site_id",
-              all.x=T)
+             by.x="field_site_id", by.y="field_site_id",
+             all.x=T)
 
 dat$field_site_id <- NULL
 
 ##### write data #####
-write.csv(dat, paste0(wd.dat, "SPCIS_plots_env_17thJune2022.csv"), row.names = F)
+write.csv(dat, paste0(wd.dat, "FULLDatabase_05272022_plotsenv4Jul2022.csv"), row.names = F)
 
-writeOGR(dat, dsn="D:/NON_PROJECT/WORKSHOPS/POWELL/DATA", layer="SPCIS_plots_env_17thJune2022", driver="ESRI Shapefile") ## Note that NAs are converted to 0.
+writeOGR(dat, dsn="E:/NON_PROJECT/WORKSHOPS/POWELL/DATA/SPCIS", layer="FULLDatabase_05272022_plotsenv4Jul2022", driver="ESRI Shapefile") ## Note that NAs are converted to 0.
 
 ##### Plot geographic locations #####
 data(stateMapEnv)

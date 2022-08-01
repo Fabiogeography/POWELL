@@ -226,8 +226,8 @@ dom <- read.csv("E:/NON_PROJECT/NCEAS2/LOCATION_DATA/NEON_Field_Site_Metadata_20
 dat$field_site_id <- substr(dat$Plot, 1, 4)
 
 dat <- merge(dat, dom[,c("field_site_id", "field_domain_id")],
-              by.x="field_site_id", by.y="field_site_id",
-              all.x=T)
+             by.x="field_site_id", by.y="field_site_id",
+             all.x=T)
 
 dat$field_site_id <- NULL
 
